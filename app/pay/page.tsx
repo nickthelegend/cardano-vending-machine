@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useWallet } from "@txnlab/use-wallet-react"
+import { useWallet } from "@meshsdk/react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -9,17 +9,24 @@ import { Scanner } from "@yudiel/react-qr-scanner"
 import { motion } from "framer-motion"
 
 export default function PayPage() {
-  const { activeAccount } = useWallet()
+  const { connected, wallet } = useWallet()
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const router = useRouter()
   const [scannedData, setScannedData] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!activeAccount) {
+    if (!connected) {
       router.push("/")
+    } else if (wallet && !walletAddress) {
+      wallet.getUsedAddresses().then(addresses => {
+        if (addresses.length > 0) {
+          setWalletAddress(addresses[0])
+        }
+      }).catch(console.error)
     }
-  }, [activeAccount, router])
+  }, [connected, wallet, walletAddress, router])
 
   const handleScan = (result: any) => {
     if (result && result.length > 0) {
@@ -41,7 +48,7 @@ export default function PayPage() {
     setIsScanning(true)
   }
 
-  if (!activeAccount) {
+  if (!connected) {
     return null
   }
 
@@ -53,7 +60,7 @@ export default function PayPage() {
           <p className="text-gray-400 mb-8">
             Connected as:{" "}
             <span className="text-orange-500">
-              {activeAccount.address.slice(0, 10)}...{activeAccount.address.slice(-10)}
+              {walletAddress ? `${walletAddress.slice(0, 10)}...${walletAddress.slice(-10)}` : "Loading..."}
             </span>
           </p>
         </motion.div>
