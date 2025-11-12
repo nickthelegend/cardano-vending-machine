@@ -31,11 +31,11 @@ export function ConnectWalletButton() {
 
   return (
     <div className="flex items-center gap-2">
-      {connected && walletAddress ? (
+      {/* {connected && walletAddress ? (
         <Button className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-primary-foreground">
           {`${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`}
         </Button>
-      ) : null}
+      ) : null} */}
       
       <CardanoWallet 
         persist={true} 
@@ -45,6 +45,8 @@ export function ConnectWalletButton() {
           submitter: provider,
           projectId: "15055c39-31c2-41d4-9c08-17efcd51e948"
         }}
+        isDark={true}
+        showDownload={false}
       />
     </div>
   )
