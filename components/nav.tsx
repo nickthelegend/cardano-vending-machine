@@ -4,11 +4,11 @@ import Link from "next/link"
 import { ConnectWalletButton } from "./connect-wallet-button"
 import { motion } from "framer-motion"
 import { usePathname } from "next/navigation"
-import { useWallet } from "@txnlab/use-wallet-react"
+import { useWallet } from "@meshsdk/react"
 
 export default function Nav() {
   const pathname = usePathname()
-  const { activeAccount } = useWallet()
+  const { connected } = useWallet()
   const isPayPage = pathname.startsWith("/pay")
 
   return (
@@ -45,7 +45,7 @@ export default function Nav() {
           >
             Home
           </Link>
-          {activeAccount && (
+          {connected && (
             <Link
               href="/pay"
               className={`text-sm font-medium transition-colors hover:text-primary ${

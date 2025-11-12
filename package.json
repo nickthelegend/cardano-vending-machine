@@ -12,15 +12,13 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@agoralabs-sh/avm-web-provider": "^1.7.0",
-    "@algorandfoundation/algokit-utils": "^9.1.2",
-    "@blockshake/defly-connect": "latest",
+
     "@emotion/is-prop-valid": "latest",
     "@hookform/resolvers": "^3.9.1",
-    "@magic-ext/algorand": "latest",
+
     "@meshsdk/core": "^1.9.0-beta.86",
     "@meshsdk/react": "^1.9.0-beta.86",
-    "@perawallet/connect": "latest",
+
     "@prisma/client": "^6.17.1",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -51,12 +49,11 @@
     "@radix-ui/react-tooltip": "1.1.6",
     "@reclaimprotocol/js-sdk": "latest",
     "@supabase/supabase-js": "^2.76.1",
-    "@txnlab/use-wallet-react": "latest",
+
     "@vercel/analytics": "1.3.1",
-    "@walletconnect/modal": "latest",
-    "@walletconnect/sign-client": "latest",
+
     "@yudiel/react-qr-scanner": "latest",
-    "algosdk": "latest",
+
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -67,8 +64,7 @@
     "geist": "^1.3.1",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
-    "lute-connect": "latest",
-    "magic-sdk": "latest",
+
     "next": "14.2.16",
     "next-themes": "latest",
     "prisma": "^6.17.1",
