@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  avatar_url   String?
+  private_key  String
+  wallet_address String @unique
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  machines     Machine[]
+
+  @@map("users")
+}
+
+model Machine {
+  id                      String   @id @default(cuid())
+  api_key                 String   @unique
+  owner_id                String
+  machine_contract_address String
+  price                   Float    @default(0.0)
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+  
+  owner User @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+
+  @@map("machines")
+}
