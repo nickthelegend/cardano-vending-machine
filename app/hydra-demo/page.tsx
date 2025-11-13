@@ -2,12 +2,12 @@
 
 import { useState, useCallback } from "react"
 import { useWallet } from "@meshsdk/react"
-import { BlockfrostProvider, MeshTxBuilder, HydraProvider, HydraInstance } from "@meshsdk/core"
+import { BlockfrostProvider, MeshTxBuilder,  } from "@meshsdk/core"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-
+import {HydraProvider, HydraInstance} from "@meshsdk/hydra"
 const provider = new BlockfrostProvider('preprodFzYIfO6BdUE1PvHWIiekgYE1ixMa9XF9')
-const hydraApiUrl = "ws://localhost:4001"
+const hydraApiUrl = "http://localhost:4001"
 const recipientAddress = "addr_test1vpvx0sacufuypa2k4sngk7q40zc5c4npl337uusdh64kv0c7e4cxr"
 
 export default function HydraDemo() {
@@ -17,7 +17,7 @@ export default function HydraDemo() {
 
   const performHeadTransaction = async (hydraProvider: HydraProvider, wallet: any) => {
     const changeAddr = await wallet.getChangeAddress()
-    const headUtxos = await hydraProvider.fetchAddressUTxos(changeAddr)
+    const headUtxos = await hydraProvider.fetchAddressUTxOs(changeAddr)
     console.log("Head UTxOs:", headUtxos)
     if (headUtxos.length < 1) {
       console.warn("No UTxOs in head yet")
@@ -77,7 +77,7 @@ export default function HydraDemo() {
       })
 
       const changeAddr = await wallet.getChangeAddress()
-      const utxos = await provider.fetchAddressUTxos(changeAddr)
+      const utxos = await provider.fetchAddressUTxOs(changeAddr)
       if (utxos.length < 1) {
         console.error("No UTxOs available to commit")
         setStatus("Error: No UTxOs available to commit")
