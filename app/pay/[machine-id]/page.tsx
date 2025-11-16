@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useWallet } from "@txnlab/use-wallet-react"
+import { useWallet } from "@meshsdk/react"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -9,9 +9,7 @@ import { motion } from "framer-motion"
 import { ChevronLeft, HelpCircle } from "lucide-react"
 import Link from "next/link"
 import Confetti from "react-confetti"
-import { AlgorandClient } from '@algorandfoundation/algokit-utils'
-import { MachineContractClient } from '../../../clients/client'
-import algosdk from 'algosdk'
+
 import { supabase } from '@/lib/supabase'
 import React from "react"
 interface MachineDetails {
@@ -22,12 +20,12 @@ interface MachineDetails {
 }
 
 export default function MachinePayPage() {
-  const { activeAccount, transactionSigner, activeAddress } = useWallet()
+  const { connected, wallet } = useWallet()
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
   const machineId = params["machine-id"] as string
-  const [algorand, setAlgorand] = useState<AlgorandClient | null>(null)
+
 
   const [machineDetails, setMachineDetails] = useState<MachineDetails | null>(null)
   const [amount, setAmount] = useState("")
@@ -40,14 +38,10 @@ export default function MachinePayPage() {
   const [slidePosition, setSlidePosition] = useState(0)
 
   useEffect(() => {
-    if (!activeAccount) {
+    if (!connected) {
       setLoading(false)
       return
     }
-
-    // Initialize Algorand client
-    const client = AlgorandClient.testNet()
-    setAlgorand(client)
 
     const fetchMachine = async () => {
       try {
@@ -88,7 +82,7 @@ export default function MachinePayPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeAccount, machineId])
+  }, [connected, machineId])
 
   const handleNumberClick = (num: string) => {
     if (transactionComplete) return
@@ -118,7 +112,7 @@ export default function MachinePayPage() {
   }
 
   const handleSlideComplete = async () => {
-    if (!activeAddress || !transactionSigner || !algorand || !machineDetails) {
+    if (!wallet || !machineDetails) {
       setError("Wallet not connected or machine not loaded")
       return
     }
@@ -127,33 +121,15 @@ export default function MachinePayPage() {
       setProcessing(true)
       setError(null)
 
-      const appId = BigInt(machineDetails.machine_contract_address)
-      const appAddress = algosdk.getApplicationAddress(appId)
-
-      const client = algorand.client.getTypedAppClientById(MachineContractClient, {
-        appId: appId,
-        defaultSigner: transactionSigner,
-        defaultSender: activeAddress,
-      })
-
-      const paymentTxn = await algorand.createTransaction.payment({
-        sender: activeAddress,
-        receiver: appAddress,
-        amount: (machineDetails.price).algo(),
-      })
-
-      const result = await client.send.pay({
-        args: [paymentTxn],
-        sender: activeAddress,
-        signer: transactionSigner
-      })
-
+      // TODO: Implement Cardano payment logic here
+      console.log('Payment with ADA:', machineDetails.price)
+      
       // Broadcast payment approved
       const channel = supabase.channel(`machine-${machineId}`)
       await channel.send({
         type: 'broadcast',
         event: 'payment_approved',
-        payload: { txnId: result.txIds[0], machineId }
+        payload: { machineId }
       })
       
       setShowConfetti(true)
@@ -166,7 +142,7 @@ export default function MachinePayPage() {
 
     } catch (err) {
       console.error('Payment failed:', err)
-      setError(`Payment failed: ${err.message}`)
+      setError(`Payment failed: ${err}`)
       setProcessing(false)
       setSlidePosition(0)
       setIsSliding(false)
@@ -243,13 +219,13 @@ export default function MachinePayPage() {
     }
   }, [isSliding, transactionComplete, processing])
 
-  if (!activeAccount) {
+  if (!connected) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black flex items-center justify-center px-4">
         <Card className="bg-slate-800 border-orange-500/20 p-8 max-w-md w-full text-center">
           <h2 className="text-2xl font-bold text-white mb-4">Connect Your Wallet</h2>
           <p className="text-gray-400 mb-6">
-            Please connect your wallet to use this vending machine and make payments in ALGO.
+            Please connect your wallet to use this vending machine and make payments in ADA.
           </p>
           <Button
             onClick={() => router.push("/")}
@@ -290,7 +266,7 @@ export default function MachinePayPage() {
           <ChevronLeft size={20} />
           <span>Back</span>
         </button>
-        <h1 className="text-xl font-bold text-white">Scan & Pay ALGO</h1>
+        <h1 className="text-xl font-bold text-white">Scan & Pay ADA</h1>
         <Link href="/help" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
           <HelpCircle size={20} />
           <span className="hidden sm:inline">Help</span>
@@ -311,7 +287,7 @@ export default function MachinePayPage() {
               <div className="text-center mb-6 p-4 bg-green-500/20 border border-green-500/50 rounded-lg">
                 <p className="text-green-400 font-semibold">✓ Transaction Complete!</p>
                 <p className="text-green-300 text-sm mt-1">
-                  Payment of {amount} ALGO completed
+                  Payment of {amount} ADA completed
                 </p>
               </div>
             )}
@@ -327,20 +303,20 @@ export default function MachinePayPage() {
             {/* Amount display */}
             <div className="text-center mb-8">
               <div className="text-5xl font-bold text-orange-500 mb-2">{machineDetails.price}</div>
-              <div className="text-gray-400 text-sm">ALGO (Fixed Price)</div>
-              <p className="text-gray-500 text-xs mt-4">Available Balance: 1000 ALGO</p>
+              <div className="text-gray-400 text-sm">ADA (Fixed Price)</div>
+              <p className="text-gray-500 text-xs mt-4">Available Balance: 1000 ADA</p>
             </div>
 
             {/* Transaction limit */}
             <div className="bg-slate-900 rounded-lg p-3 mb-6 border border-orange-500/20 flex items-center gap-2">
               <div className="w-4 h-4 bg-orange-500 rounded flex-shrink-0" />
-              <p className="text-gray-300 text-sm">Your Transaction Limit: 500 ALGO</p>
+              <p className="text-gray-300 text-sm">Your Transaction Limit: 500 ADA</p>
             </div>
 
             {/* Fixed price info */}
             <div className="bg-slate-900 rounded-lg p-4 mb-6 border border-orange-500/30">
               <p className="text-gray-300 text-sm text-center">
-                This machine has a fixed price of <span className="text-orange-400 font-bold">{machineDetails.price} ALGO</span>
+                This machine has a fixed price of <span className="text-orange-400 font-bold">{machineDetails.price} ADA</span>
               </p>
             </div>
 
