@@ -11,7 +11,7 @@ import Footer from "@/components/footer"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "VendChain - On-Chain Vending Machines",
+  title: "HydrationStationPay - On-Chain Vending Machines",
   description: "The future of commerce. Buy anything, anytime, anywhere with blockchain-powered vending machines.",
     generator: 'v0.app'
 }

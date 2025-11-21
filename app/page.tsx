@@ -96,7 +96,7 @@ export default function Home() {
             transition={{ duration: 0.5 }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl font-bold text-white">How VendChain Works</h2>
+            <h2 className="text-4xl font-bold text-white">How HydrationStationPay Works</h2>
             <p className="mt-4 text-gray-400 max-w-2xl mx-auto">
               Three simple steps to revolutionize your shopping experience
             </p>
@@ -108,7 +108,7 @@ export default function Home() {
                 icon: Zap,
                 title: "Connect Your Wallet",
                 description:
-                  "Link your Algorand wallet to access our network of vending machines. Secure, fast, and decentralized.",
+                  "Link your Cardano wallet to access our network of vending machines. Secure, fast, and decentralized.",
                 step: "01",
               },
               {
@@ -122,7 +122,7 @@ export default function Home() {
                 icon: TrendingUp,
                 title: "Instant Delivery",
                 description:
-                  "Get your items instantly. All transactions are recorded on the Algorand blockchain for transparency.",
+                  "Get your items instantly. All transactions are recorded on the Cardano blockchain for transparency.",
                 step: "03",
               },
             ].map((feature, index) => (
@@ -158,7 +158,7 @@ export default function Home() {
             transition={{ duration: 0.5 }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl font-bold text-white">Why Choose VendChain?</h2>
+            <h2 className="text-4xl font-bold text-white">Why Choose HydrationStationPay?</h2>
             <p className="mt-4 text-gray-400 max-w-2xl mx-auto">Experience the next generation of automated retail</p>
           </motion.div>
 
@@ -174,7 +174,7 @@ export default function Home() {
               },
               {
                 title: "Fast",
-                description: "Instant transactions with Algorand's lightning-fast consensus mechanism.",
+                description: "Instant transactions with Cardano's efficient consensus mechanism.",
               },
               {
                 title: "Transparent",

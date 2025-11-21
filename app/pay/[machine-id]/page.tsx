@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useWallet } from "@meshsdk/react"
+import { BlockfrostProvider, MeshTxBuilder } from "@meshsdk/core"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -12,6 +13,8 @@ import Confetti from "react-confetti"
 
 import { supabase } from '@/lib/supabase'
 import React from "react"
+
+const provider = new BlockfrostProvider('preprodFzYIfO6BdUE1PvHWIiekgYE1ixMa9XF9')
 interface MachineDetails {
   id: string
   machine_contract_address: string
@@ -121,15 +124,31 @@ export default function MachinePayPage() {
       setProcessing(true)
       setError(null)
 
-      // TODO: Implement Cardano payment logic here
-      console.log('Payment with ADA:', machineDetails.price)
+      const utxos = await wallet.getUtxos()
+      const changeAddress = await wallet.getChangeAddress()
+      
+      const txBuilder = new MeshTxBuilder({
+        fetcher: provider,
+        verbose: true,
+      })
+
+      const paymentAmount = (machineDetails.price * 1000000).toString() // Convert ADA to lovelace
+      
+      const unsignedTx = await txBuilder
+        .txOut(machineDetails.machine_contract_address, [{ unit: "lovelace", quantity: paymentAmount }])
+        .changeAddress(changeAddress)
+        .selectUtxosFrom(utxos)
+        .complete()
+
+      const signedTx = await wallet.signTx(unsignedTx)
+      const txHash = await wallet.submitTx(signedTx)
       
       // Broadcast payment approved
       const channel = supabase.channel(`machine-${machineId}`)
       await channel.send({
         type: 'broadcast',
         event: 'payment_approved',
-        payload: { machineId }
+        payload: { txnId: txHash, machineId }
       })
       
       setShowConfetti(true)
