@@ -56,6 +56,14 @@ export default function Nav() {
             </Link>
           )}
           <Link
+            href="/hydra-demo"
+            className={`text-sm font-medium transition-colors hover:text-primary ${
+              pathname === "/hydra-demo" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            Hydra Demo
+          </Link>
+          <Link
             href="/about"
             className={`text-sm font-medium transition-colors hover:text-primary ${
               pathname === "/about" ? "text-primary" : "text-muted-foreground"

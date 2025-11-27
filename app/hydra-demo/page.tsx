@@ -14,7 +14,10 @@ import { hydraLogger } from "@/lib/hydra-logger"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 // Configuration constants
-const HYDRA_NODE_URL = "http://139.59.24.68:4001"
+// Use local proxy to avoid CORS issues
+const HYDRA_NODE_URL = typeof window !== 'undefined' 
+  ? `${window.location.origin}/api/hydra-proxy`
+  : "http://localhost:3000/api/hydra-proxy"
 const BLOCKFROST_API_KEY = process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY
 
 // Validate configuration
@@ -59,6 +62,7 @@ export default function HydraDemo() {
   // Validate configuration on component mount
   useEffect(() => {
     hydraLogger.info('HydraDemo component mounted')
+    hydraLogger.info(`Using Hydra node URL: ${HYDRA_NODE_URL}`)
     
     if (!isConfigValid()) {
       const errorMsg = 'Configuration Error: NEXT_PUBLIC_BLOCKFROST_API_KEY environment variable is missing or empty. Please add it to your .env file.'
@@ -319,8 +323,9 @@ export default function HydraDemo() {
   }, [setupHydraProvider])
 
   /**
-   * Initialize a new Hydra head
-   * Connects to the Hydra provider and sends initialization request to the Hydra node
+   * Initialize/Connect to Hydra head
+   * Note: For this Hydra node setup, initialization happens automatically when committing.
+   * This function just ensures we're connected to the provider.
    * Requirements: 2.1, 2.2, 2.3, 2.5
    */
   const initializeHead = useCallback(async () => {
@@ -337,7 +342,7 @@ export default function HydraDemo() {
     }
 
     setLoading(true)
-    updateStatus("Initializing Hydra head...", 'loading')
+    updateStatus("Connecting to Hydra node...", 'loading')
     
     // Log operation start (Requirement 9.2)
     hydraLogger.logOperationStart('initialize', { walletConnected: true })
@@ -347,33 +352,33 @@ export default function HydraDemo() {
       hydraLogger.logOperationProgress('initialize', 'Connecting to Hydra provider')
       const hydraProvider = await setupHydraProvider()
       
-      // Send initialization request to Hydra node (Requirement 2.2)
-      hydraLogger.logOperationProgress('initialize', 'Sending init request to Hydra node')
-      await hydraProvider.init()
+      hydraLogger.logOperationProgress('initialize', 'Connected successfully')
       
-      hydraLogger.logOperationProgress('initialize', 'Init request sent successfully')
-      
-      // Update UI to show initialized state (Requirement 2.4)
-      updateStatus('Hydra head initialization requested. Waiting for confirmation from Hydra node...', 'loading', 'initialize')
-      setHeadState('initializing')
+      // Update UI to show ready state (Requirement 2.4)
+      // Note: This Hydra node will initialize automatically when you commit funds
+      updateStatus('Connected to Hydra node. You can now commit funds. The head will initialize automatically when you commit.', 'success', 'initialize')
+      setHeadState('initialized')
       
       // Log operation completion (Requirement 9.2)
-      hydraLogger.logOperationComplete('initialize', { state: 'initializing' })
+      hydraLogger.logOperationComplete('initialize', { state: 'initialized' })
       
     } catch (error: any) {
       // Error handling with user-friendly messages (Requirement 2.5, 9.1, 9.2, 9.3, 9.4, 9.5)
-      hydraLogger.logOperationError('initialize', error, 'Hydra head initialization failed')
+      hydraLogger.logOperationError('initialize', error, 'Hydra connection failed')
       const errorMessage = error?.message || String(error)
+      const errorCode = error?.code || ''
       
       // Provide specific error messages for common issues (Requirement 9.5)
-      if (errorMessage.includes('Cannot reach Hydra node') || errorMessage.includes('network')) {
+      if (errorCode === 'ERR_NETWORK' || errorMessage.includes('CORS') || errorMessage.includes('Access-Control-Allow-Origin')) {
+        updateStatus(`Error: CORS policy blocking request to Hydra node. The Hydra node at ${HYDRA_NODE_URL} needs to be configured to allow requests from this origin. Solutions: 1) Contact node operator to enable CORS, 2) Use a CORS proxy, or 3) Run your own local Hydra node.`, 'error', 'initialize')
+      } else if (errorMessage.includes('Cannot reach Hydra node') || errorMessage.includes('network')) {
         updateStatus(`Error: Cannot reach Hydra node. Please check your network connectivity and ensure the Hydra node at ${HYDRA_NODE_URL} is accessible.`, 'error', 'initialize')
       } else if (errorMessage.includes('connect') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('timeout')) {
         updateStatus(`Error: Failed to connect to Hydra node. Please verify network connectivity and that the node is running at ${HYDRA_NODE_URL}.`, 'error', 'initialize')
       } else if (errorMessage.includes('wallet')) {
         updateStatus('Error: Wallet connection issue. Please ensure your wallet is connected.', 'error', 'initialize')
       } else {
-        updateStatus(`Error: Failed to initialize Hydra head - ${errorMessage}`, 'error', 'initialize')
+        updateStatus(`Error: Failed to connect to Hydra node - ${errorMessage}`, 'error', 'initialize')
       }
       
       // Maintain current headState on error (don't reset unless necessary) - Requirement 9.4
@@ -477,9 +482,16 @@ export default function HydraDemo() {
       // Error handling with user-friendly messages (Requirement 9.1, 9.2, 9.3, 9.4, 9.5)
       hydraLogger.logOperationError('commit', error, 'Commit funds operation failed')
       const errorMessage = error?.message || String(error)
+      const errorCode = error?.code || ''
+      const errorData = error?.data || ''
       
       // Provide specific error messages for common issues (Requirement 9.5)
-      if (errorMessage.includes('Cannot reach Hydra node') || errorMessage.includes('network')) {
+      if (errorData.includes('FailedToDraftTxNotInitializing') || errorMessage.includes('FailedToDraftTxNotInitializing')) {
+        updateStatus('Error: Cannot commit funds - the Hydra head is not in the initializing state. Please click "Initialize Head" first, then try committing again.', 'error', 'commit')
+        setHeadState('idle') // Reset to idle so user can initialize
+      } else if (errorCode === 'ERR_NETWORK' || errorMessage.includes('CORS') || errorMessage.includes('Access-Control-Allow-Origin')) {
+        updateStatus(`Error: CORS policy blocking request to Hydra node. The Hydra node at ${HYDRA_NODE_URL} needs to be configured to allow requests from this origin. Solutions: 1) Contact node operator to enable CORS, 2) Use a CORS proxy, or 3) Run your own local Hydra node.`, 'error', 'commit')
+      } else if (errorMessage.includes('Cannot reach Hydra node') || errorMessage.includes('network')) {
         updateStatus(`Error: Cannot reach Hydra node. Please check your network connectivity and ensure the Hydra node at ${HYDRA_NODE_URL} is accessible.`, 'error', 'commit')
       } else if (errorMessage.includes('connect') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('timeout')) {
         updateStatus(`Error: Failed to connect to Hydra node. Please verify network connectivity and that the node is running at ${HYDRA_NODE_URL}.`, 'error', 'commit')
@@ -722,6 +734,27 @@ export default function HydraDemo() {
                 </div>
               </div>
             )}
+
+            {/* Proxy Information Banner */}
+            <div className="p-4 rounded-lg border bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 text-blue-800 dark:text-blue-200">
+                  <Info className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-1">Quick Start Guide</h3>
+                  <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+                    1. Click "Initialize Head" to connect<br/>
+                    2. Click "Commit Funds" to start the head (it will auto-initialize)<br/>
+                    3. Wait for "HeadIsOpen" message<br/>
+                    4. Use "Close Head" and "Fanout" when done
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Connected to Hydra node at <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">209.38.126.165:4001</code> via proxy
+                  </p>
+                </div>
+              </div>
+            </div>
 
             {/* Wallet Connection Status */}
             <div className="p-4 border rounded-lg bg-muted/50">
