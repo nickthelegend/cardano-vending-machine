@@ -53,6 +53,14 @@ export default function HydraDemo() {
   const [debugMode, setDebugMode] = useState<boolean>(false)
   const [operationHistory, setOperationHistory] = useState<OperationHistoryEntry[]>([])
   const [historyOpen, setHistoryOpen] = useState<boolean>(false)
+  const [hydraBalance, setHydraBalance] = useState<number>(0)
+  const [fetchingBalance, setFetchingBalance] = useState<boolean>(false)
+  const [hydraUtxos, setHydraUtxos] = useState<any[]>([])
+  const [showUtxoList, setShowUtxoList] = useState<boolean>(false)
+  const [sendFundsOpen, setSendFundsOpen] = useState<boolean>(false)
+  const [recipientAddress, setRecipientAddress] = useState<string>("")
+  const [sendAmount, setSendAmount] = useState<string>("")
+  const [sending, setSending] = useState<boolean>(false)
   
   // Singleton pattern for HydraProvider and HydraInstance
   const hydraProviderRef = useRef<HydraProvider | null>(null)
@@ -639,6 +647,270 @@ export default function HydraDemo() {
     }
   }, [wallet, setupHydraProvider, updateStatus])
 
+  /**
+   * Send funds within the Hydra head (Layer 2 transaction)
+   * Builds and submits a transaction to send ADA to another address
+   */
+  const sendFunds = useCallback(async () => {
+    if (!wallet || !walletAddress) {
+      updateStatus('Error: Please connect your wallet first', 'error')
+      return
+    }
+
+    if (headState !== 'open') {
+      updateStatus('Error: Head must be open to send funds', 'error')
+      return
+    }
+
+    if (!recipientAddress || !sendAmount) {
+      updateStatus('Error: Please enter recipient address and amount', 'error')
+      return
+    }
+
+    const amountLovelace = Math.floor(parseFloat(sendAmount) * 1_000_000)
+    if (isNaN(amountLovelace) || amountLovelace <= 0) {
+      updateStatus('Error: Invalid amount', 'error')
+      return
+    }
+
+    setSending(true)
+    updateStatus('Sending funds in Hydra head...', 'loading')
+    hydraLogger.logOperationStart('send', { recipient: recipientAddress, amount: sendAmount })
+
+    try {
+      const hydraProvider = await setupHydraProvider()
+      
+      // Import MeshTxBuilder
+      const { MeshTxBuilder } = await import('@meshsdk/core')
+      
+      // Create transaction builder for Hydra
+      hydraLogger.logOperationProgress('send', 'Building transaction')
+      const txBuilder = new MeshTxBuilder({
+        isHydra: true,
+        fetcher: hydraProvider,
+      })
+      
+      // Get UTxOs for the connected wallet
+      hydraLogger.logOperationProgress('send', 'Fetching UTxOs')
+      const utxos = await hydraProvider.fetchAddressUTxOs(walletAddress)
+      
+      if (!utxos || utxos.length === 0) {
+        updateStatus('Error: No UTxOs available in Hydra head', 'error', 'send')
+        return
+      }
+      
+      hydraLogger.logOperationProgress('send', `Found ${utxos.length} UTxOs`)
+      
+      // Build transaction
+      hydraLogger.logOperationProgress('send', 'Building Hydra transaction')
+      const txHex = await txBuilder
+        .txOut(recipientAddress, [{ unit: 'lovelace', quantity: amountLovelace.toString() }])
+        .changeAddress(walletAddress)
+        .selectUtxosFrom(utxos)
+        .complete()
+      
+      hydraLogger.logOperationProgress('send', 'Transaction built, requesting signature')
+      
+      // Sign transaction
+      const signedTx = await wallet.signTx(txHex, true)
+      hydraLogger.logOperationProgress('send', 'Transaction signed')
+      
+      // Submit to Hydra
+      hydraLogger.logOperationProgress('send', 'Submitting to Hydra head')
+      const txHash = await hydraProvider.submitTx(signedTx)
+      
+      hydraLogger.logOperationComplete('send', { txHash, recipient: recipientAddress, amount: sendAmount })
+      updateStatus(`Success: Sent ${sendAmount} ₳ to ${recipientAddress.substring(0, 20)}... Tx: ${txHash}`, 'success', 'send')
+      
+      // Clear form
+      setRecipientAddress('')
+      setSendAmount('')
+      setSendFundsOpen(false)
+      
+      // Refresh balance after a short delay (balance will auto-refresh via useEffect)
+      
+    } catch (error: any) {
+      hydraLogger.logOperationError('send', error, 'Send funds failed')
+      const errorMessage = error?.message || String(error)
+      updateStatus(`Error: Failed to send funds - ${errorMessage}`, 'error', 'send')
+    } finally {
+      setSending(false)
+    }
+  }, [wallet, walletAddress, headState, recipientAddress, sendAmount, setupHydraProvider, updateStatus])
+
+  /**
+   * Fetch Hydra balance (Layer 2 funds)
+   * Shows the balance of funds inside the Hydra head
+   */
+  const fetchHydraBalance = useCallback(async () => {
+    console.log('[Balance] Checking conditions:', { 
+      hasWallet: !!wallet, 
+      walletAddress, 
+      headState 
+    })
+    
+    if (!wallet || !walletAddress) {
+      console.log('[Balance] No wallet or address, skipping')
+      setHydraBalance(0)
+      setHydraUtxos([])
+      return
+    }
+    
+    if (headState !== 'open') {
+      console.log('[Balance] Head not open, skipping. Current state:', headState)
+      setHydraBalance(0)
+      setHydraUtxos([])
+      return
+    }
+
+    setFetchingBalance(true)
+    hydraLogger.logOperationStart('balance', { walletAddress, headState })
+    console.log('[Balance] Starting balance fetch...')
+
+    try {
+      // Fetch head data to get localUTxO
+      hydraLogger.logOperationProgress('balance', 'Fetching Hydra head data')
+      console.log('[Balance] Fetching from /head endpoint...')
+      
+      const response = await fetch(`${HYDRA_NODE_URL}/head`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch head data: ${response.status} ${response.statusText}`)
+      }
+      
+      const headData = await response.json()
+      console.log('[Balance] Received head data:', headData)
+      
+      // Get localUTxO from coordinatedHeadState
+      const localUTxO = headData?.contents?.coordinatedHeadState?.localUTxO || {}
+      console.log('[Balance] Local UTxO:', localUTxO)
+      
+      // UTxOs are in an object format: { "txHash#index": { address, value, ... }, ... }
+      const utxoEntries = Object.entries(localUTxO)
+      console.log('[Balance] Total UTxO entries:', utxoEntries.length)
+      
+      // Filter and calculate balance for this wallet
+      let totalLovelace = 0
+      const myUtxos: any[] = []
+      
+      for (const [utxoRef, utxo] of utxoEntries) {
+        const utxoData = utxo as any
+        console.log('[Balance] Checking UTxO:', { 
+          ref: utxoRef, 
+          address: utxoData.address, 
+          myAddress: walletAddress,
+          matches: utxoData.address === walletAddress
+        })
+        
+        if (utxoData.address === walletAddress) {
+          const lovelace = utxoData.value?.lovelace || 0
+          console.log('[Balance] Found my UTxO:', { ref: utxoRef, lovelace })
+          totalLovelace += Number(lovelace)
+          myUtxos.push({
+            ref: utxoRef,
+            address: utxoData.address,
+            lovelace: Number(lovelace),
+            ada: Number(lovelace) / 1_000_000,
+            value: utxoData.value
+          })
+        }
+      }
+      
+      console.log('[Balance] My UTxO count:', myUtxos.length)
+      console.log('[Balance] Total lovelace:', totalLovelace)
+      console.log('[Balance] My UTxOs:', myUtxos)
+      
+      // Convert to ADA
+      const balanceAda = totalLovelace / 1_000_000
+      console.log('[Balance] Balance in ADA:', balanceAda)
+      setHydraBalance(balanceAda)
+      setHydraUtxos(myUtxos)
+      
+      hydraLogger.logOperationComplete('balance', { 
+        utxoCount: myUtxos.length, 
+        balanceAda,
+        totalLovelace 
+      })
+      
+    } catch (error: any) {
+      console.error('[Balance] Error fetching balance:', error)
+      hydraLogger.logOperationError('balance', error, 'Failed to fetch Hydra balance')
+      setHydraBalance(0)
+      setHydraUtxos([])
+    } finally {
+      setFetchingBalance(false)
+    }
+  }, [wallet, walletAddress, headState])
+
+  /**
+   * Fetch current head status from Hydra node
+   * Syncs the UI state with the actual Hydra node state
+   */
+  const fetchHeadStatus = useCallback(async () => {
+    try {
+      console.log('[HeadStatus] Fetching head status from /head endpoint...')
+      const response = await fetch(`${HYDRA_NODE_URL}/head`)
+      
+      if (!response.ok) {
+        console.log('[HeadStatus] Failed to fetch:', response.status, response.statusText)
+        return
+      }
+      
+      const data = await response.json()
+      console.log('[HeadStatus] Received data:', data)
+      
+      // The response has format: { tag: "Open", contents: {...} } or { tag: "Idle" }
+      const tag = data?.tag
+      console.log('[HeadStatus] Head tag:', tag)
+      
+      // Update head state based on API response
+      if (tag === 'Open') {
+        console.log('[HeadStatus] Head is OPEN, updating state')
+        if (headState !== 'open') {
+          setHeadState('open')
+          updateStatus('Head is open - ready for transactions', 'success')
+        }
+      } else if (tag === 'Idle') {
+        if (headState !== 'idle') {
+          setHeadState('idle')
+          updateStatus('Head is idle', 'info')
+        }
+      } else if (tag === 'Initializing') {
+        if (headState !== 'initializing') {
+          setHeadState('initializing')
+          updateStatus('Head is initializing...', 'loading')
+        }
+      } else if (tag === 'Closed') {
+        if (headState !== 'closed') {
+          setHeadState('closed')
+          updateStatus('Head is closed - ready for fanout', 'info')
+        }
+      }
+      
+    } catch (error) {
+      console.error('[HeadStatus] Error fetching head status:', error)
+    }
+  }, [headState, updateStatus])
+
+  // Fetch head status on mount and periodically
+  useEffect(() => {
+    fetchHeadStatus()
+    // Check head status every 5 seconds
+    const interval = setInterval(fetchHeadStatus, 5000)
+    return () => clearInterval(interval)
+  }, [fetchHeadStatus])
+
+  // Fetch balance when head opens or wallet changes
+  useEffect(() => {
+    if (headState === 'open' && walletAddress) {
+      fetchHydraBalance()
+      // Refresh balance every 10 seconds when head is open
+      const interval = setInterval(fetchHydraBalance, 10000)
+      return () => clearInterval(interval)
+    } else {
+      setHydraBalance(0)
+    }
+  }, [headState, walletAddress, fetchHydraBalance])
+
   // Helper function to get head state badge variant and color
   const getHeadStateBadge = () => {
     switch (headState) {
@@ -763,17 +1035,123 @@ export default function HydraDemo() {
                 <h3 className="font-semibold">Wallet Status</h3>
               </div>
               {connected && walletAddress ? (
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Connected</p>
-                  <p className="text-xs font-mono bg-background p-2 rounded border break-all">
-                    {walletAddress}
-                  </p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Connected</p>
+                    <p className="text-xs font-mono bg-background p-2 rounded border break-all">
+                      {walletAddress}
+                    </p>
+                  </div>
+                  
+                  {/* Hydra Balance Display */}
+                  <div className="pt-2 border-t">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-semibold text-green-600 dark:text-green-400">
+                          Hydra Balance (Layer 2)
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {headState === 'open' ? `${hydraUtxos.length} UTxO${hydraUtxos.length !== 1 ? 's' : ''} in Hydra Head` : 'Head must be open to show balance'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        {headState === 'open' ? (
+                          <>
+                            {fetchingBalance ? (
+                              <Spinner className="h-4 w-4" />
+                            ) : (
+                              <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                {hydraBalance.toFixed(6)} ₳
+                              </p>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={fetchHydraBalance}
+                              disabled={fetchingBalance}
+                              className="text-xs mt-1"
+                            >
+                              {fetchingBalance ? 'Fetching...' : 'Refresh'}
+                            </Button>
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            N/A
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* UTxO List */}
+                    {headState === 'open' && hydraUtxos.length > 0 && (
+                      <Collapsible open={showUtxoList} onOpenChange={setShowUtxoList}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="w-full text-xs">
+                            {showUtxoList ? 'Hide' : 'Show'} UTxO Details ({hydraUtxos.length})
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-2 space-y-2">
+                          {hydraUtxos.map((utxo, index) => (
+                            <div key={utxo.ref} className="p-2 bg-background rounded border text-xs">
+                              <div className="flex justify-between items-start mb-1">
+                                <span className="font-mono text-[10px] text-muted-foreground break-all">
+                                  #{index + 1}: {utxo.ref}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Amount:</span>
+                                <span className="font-semibold text-green-600 dark:text-green-400">
+                                  {utxo.ada.toFixed(6)} ₳
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-1">
+                                {utxo.lovelace.toLocaleString()} lovelace
+                              </div>
+                            </div>
+                          ))}
+                          <div className="pt-2 border-t flex justify-between items-center font-semibold">
+                            <span>Total:</span>
+                            <span className="text-green-600 dark:text-green-400">
+                              {hydraBalance.toFixed(6)} ₳
+                            </span>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No wallet connected. Please connect your wallet to begin.
                 </p>
               )}
+            </div>
+
+            {/* Hydra Head Status Display */}
+            <div className="p-4 border-2 rounded-lg bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950 dark:to-blue-950 border-purple-200 dark:border-purple-800">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h3 className="font-semibold text-lg mb-1">Hydra Head Status</h3>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={headStateBadge.variant} className={`${headStateBadge.color} text-base px-4 py-1`}>
+                      {headStateBadge.label}
+                    </Badge>
+                    {headState === 'open' && (
+                      <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+                        ✓ Ready for transactions
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {headState === 'open' && (
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">Layer 2 Balance</p>
+                    <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+                      {hydraBalance.toFixed(2)} ₳
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Operation Buttons */}
@@ -876,6 +1254,73 @@ export default function HydraDemo() {
                 </TooltipContent>
               </Tooltip>
             </div>
+
+            {/* Send Funds in Hydra (Layer 2 Transaction) */}
+            {headState === 'open' && (
+              <div className="pt-4 border-t">
+                <Collapsible open={sendFundsOpen} onOpenChange={setSendFundsOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between">
+                      <span className="flex items-center gap-2">
+                        <Upload className="h-4 w-4" />
+                        Send Funds (Layer 2)
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {sendFundsOpen ? 'Hide' : 'Show'}
+                      </span>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-3 space-y-3">
+                    <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Recipient Address</label>
+                        <input
+                          type="text"
+                          value={recipientAddress}
+                          onChange={(e) => setRecipientAddress(e.target.value)}
+                          placeholder="addr_test1..."
+                          className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+                          disabled={sending}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Amount (₳)</label>
+                        <input
+                          type="number"
+                          value={sendAmount}
+                          onChange={(e) => setSendAmount(e.target.value)}
+                          placeholder="0.000000"
+                          step="0.000001"
+                          min="0"
+                          className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+                          disabled={sending}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Available: {hydraBalance.toFixed(6)} ₳
+                        </p>
+                      </div>
+                      <Button
+                        onClick={sendFunds}
+                        disabled={sending || !recipientAddress || !sendAmount}
+                        className="w-full"
+                      >
+                        {sending ? (
+                          <>
+                            <Spinner className="h-4 w-4 mr-2" />
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4 mr-2" />
+                            Send Funds
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
 
             {/* Status Display */}
             {status && (
