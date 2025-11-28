@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const HYDRA_NODE_URL = 'http://209.38.126.165:4001'
+const HYDRA_NODE_WS_URL = 'ws://209.38.126.165:4001'
 
 // Handle all HTTP methods and proxy to Hydra node
 async function handleRequest(
@@ -8,6 +9,22 @@ async function handleRequest(
   { params }: { params: { path: string[] } }
 ) {
   try {
+    // Check if this is a WebSocket upgrade request
+    const upgrade = request.headers.get('upgrade')
+    if (upgrade?.toLowerCase() === 'websocket') {
+      // WebSocket requests cannot be handled in Next.js API routes
+      // Return instructions to connect directly
+      console.log('[Hydra Proxy] WebSocket upgrade requested - not supported in API routes')
+      return NextResponse.json(
+        { 
+          error: 'WebSocket connections not supported through proxy',
+          message: 'Please connect directly to the Hydra node WebSocket',
+          wsUrl: HYDRA_NODE_WS_URL
+        },
+        { status: 400 }
+      )
+    }
+    
     // Construct the path from the dynamic segments
     const path = params.path ? `/${params.path.join('/')}` : ''
     const search = new URL(request.url).search
