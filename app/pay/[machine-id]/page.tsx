@@ -55,12 +55,14 @@ export default function MachinePayPage() {
   const [slidePosition, setSlidePosition] = useState(0)
   
   // Hydra-specific state
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('layer1')
   const [headState, setHeadState] = useState<HeadState>('idle')
   const [hydraConnected, setHydraConnected] = useState(false)
   const [hydraBalance, setHydraBalance] = useState<number>(0)
   const [hydraUtxoCount, setHydraUtxoCount] = useState<number>(0)
   const [fetchingHydraBalance, setFetchingHydraBalance] = useState(false)
+  const [availableUtxos, setAvailableUtxos] = useState<any[]>([])
+  const [selectedUtxoIndex, setSelectedUtxoIndex] = useState<number>(0)
+  const [showCommitSection, setShowCommitSection] = useState<boolean>(false)
   
   // Singleton pattern for HydraProvider and HydraInstance
   const hydraProviderRef = useRef<HydraProvider | null>(null)
@@ -322,6 +324,80 @@ export default function MachinePayPage() {
       return () => clearInterval(interval)
     }
   }, [connected, wallet, headState, fetchHydraBalance])
+
+  /**
+   * Commit funds to the Hydra head
+   * Uses the selected UTxO from availableUtxos
+   */
+  const commitFunds = useCallback(async () => {
+    if (!wallet) {
+      setError("Please connect your wallet first")
+      return
+    }
+
+    if (availableUtxos.length === 0) {
+      setError("Please load UTxOs first")
+      return
+    }
+
+    setProcessing(true)
+    setError(null)
+    console.log('[Commit] Starting commit operation...')
+    
+    try {
+      // Get selected UTxO
+      const selectedUtxo = availableUtxos[selectedUtxoIndex]
+      const txHash = selectedUtxo.input.txHash
+      const outputIndex = selectedUtxo.input.outputIndex
+      const lovelace = selectedUtxo.output?.amount?.[0]?.quantity || 0
+      const ada = lovelace / 1_000_000
+      
+      console.log(`[Commit] Committing UTxO: ${txHash}#${outputIndex} (${ada} ADA)`)
+      
+      // Get HydraInstance
+      const hydraInstance = await getHydraInstance()
+      
+      // Build commit transaction
+      console.log('[Commit] Building commit transaction...')
+      const commitTxCbor = await hydraInstance.commitFunds(txHash, outputIndex)
+      
+      // Request wallet signature
+      console.log('[Commit] Requesting wallet signature...')
+      let signedTx: string
+      try {
+        signedTx = await wallet.signTx(commitTxCbor, true)
+      } catch (signError: any) {
+        const signErrorMessage = signError?.message || String(signError)
+        if (signErrorMessage.includes('cancel') || signErrorMessage.includes('reject') || signErrorMessage.includes('denied')) {
+          throw new Error('Transaction signing was cancelled')
+        }
+        throw new Error(`Failed to sign transaction: ${signErrorMessage}`)
+      }
+      
+      // Submit to Layer 1
+      console.log('[Commit] Submitting to Layer 1...')
+      const txHashResult = await wallet.submitTx(signedTx)
+      
+      console.log(`[Commit] Success! Tx hash: ${txHashResult}`)
+      setError(null)
+      
+      // Clear UTxOs and close commit section
+      setAvailableUtxos([])
+      setShowCommitSection(false)
+      
+      // Refresh balance after a delay
+      setTimeout(() => {
+        fetchHydraBalance()
+      }, 3000)
+      
+    } catch (error: any) {
+      console.error('[Commit] Error:', error)
+      const errorMessage = error?.message || String(error)
+      setError(`Commit failed: ${errorMessage}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [wallet, availableUtxos, selectedUtxoIndex, getHydraInstance, fetchHydraBalance])
 
   useEffect(() => {
     if (!connected) {
@@ -628,11 +704,8 @@ export default function MachinePayPage() {
   }, [wallet, machineDetails, machineId])
 
   const handleSlideComplete = async () => {
-    if (paymentMethod === 'layer2') {
-      await sendHydraPayment()
-    } else {
-      await sendLayer1Payment()
-    }
+    // Always use Hydra payment
+    await sendHydraPayment()
   }
 
   const handleSlideStart = (e: React.MouseEvent | React.TouchEvent) => {
@@ -773,37 +846,21 @@ export default function MachinePayPage() {
               <div className="text-center mb-6 p-4 bg-green-500/20 border border-green-500/50 rounded-lg">
                 <p className="text-green-400 font-semibold">✓ Transaction Complete!</p>
                 <p className="text-green-300 text-sm mt-1">
-                  Payment of {machineDetails.price} ADA completed via {paymentMethod === 'layer2' ? 'Hydra (Layer 2)' : 'Layer 1'}
+                  Payment of {machineDetails.price} ADA completed
                 </p>
               </div>
             )}
 
-            {/* Payment Method Toggle */}
+            {/* Payment Section Title */}
             {!transactionComplete && (
               <div className="mb-6">
-                <label className="text-gray-300 text-sm mb-2 block">Payment Method</label>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => setPaymentMethod('layer1')}
-                    variant={paymentMethod === 'layer1' ? 'default' : 'outline'}
-                    className={`flex-1 ${paymentMethod === 'layer1' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-slate-700 hover:bg-slate-600'}`}
-                  >
-                    Layer 1 (Cardano)
-                  </Button>
-                  <Button
-                    onClick={() => setPaymentMethod('layer2')}
-                    variant={paymentMethod === 'layer2' ? 'default' : 'outline'}
-                    className={`flex-1 ${paymentMethod === 'layer2' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}
-                    disabled={headState !== 'open'}
-                  >
-                    Layer 2 (Hydra)
-                  </Button>
-                </div>
+                <h3 className="text-gray-300 text-lg font-semibold mb-2">Payment</h3>
+                <p className="text-gray-400 text-sm">Pay using Hydra Layer 2 for instant transactions</p>
               </div>
             )}
 
             {/* Hydra Status Indicator */}
-            {paymentMethod === 'layer2' && (
+            {!transactionComplete && (
               <div className={`mb-6 p-4 rounded-lg border ${
                 headState === 'open' 
                   ? 'bg-green-500/10 border-green-500/30' 
@@ -816,22 +873,130 @@ export default function MachinePayPage() {
                   <p className={`text-sm font-semibold ${
                     headState === 'open' ? 'text-green-400' : 'text-yellow-400'
                   }`}>
-                    Hydra Head Status: {headState.charAt(0).toUpperCase() + headState.slice(1)}
+                    Hydra Head: {headState.charAt(0).toUpperCase() + headState.slice(1)}
                   </p>
                 </div>
                 {headState === 'open' ? (
                   <div className="text-gray-300 text-xs">
-                    <p>✓ Ready for instant Layer 2 payments</p>
+                    <p>✓ Ready for instant payments</p>
                     {fetchingHydraBalance ? (
                       <p className="mt-1">Loading balance...</p>
                     ) : (
-                      <p className="mt-1">Hydra Balance: {hydraBalance.toFixed(2)} ADA ({hydraUtxoCount} UTxOs)</p>
+                      <p className="mt-1">Your Hydra Balance: {hydraBalance.toFixed(2)} ADA ({hydraUtxoCount} UTxOs)</p>
                     )}
                   </div>
                 ) : (
-                  <p className="text-gray-300 text-xs">
-                    Head is not open. Please use Layer 1 payment or wait for head to open.
-                  </p>
+                  <div className="text-gray-300 text-xs">
+                    <p>Head is not open. Commit funds to participate.</p>
+                    <Button
+                      onClick={() => setShowCommitSection(!showCommitSection)}
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                    >
+                      {showCommitSection ? 'Hide' : 'Show'} Commit Options
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Commit Section - Always show balance, show commit UI when toggled */}
+            {!transactionComplete && (
+              <div className="mb-6">
+                {/* Always show L2 Balance */}
+                <div className="bg-slate-900 rounded-lg p-4 mb-4 border border-blue-500/30">
+                  <h4 className="text-sm font-semibold text-blue-400 mb-2">Layer 2 Balance</h4>
+                  {fetchingHydraBalance ? (
+                    <p className="text-gray-400 text-sm">Loading...</p>
+                  ) : (
+                    <div>
+                      <p className="text-2xl font-bold text-blue-500">{hydraBalance.toFixed(2)} ₳</p>
+                      <p className="text-xs text-gray-400 mt-1">{hydraUtxoCount} UTxOs in Hydra head</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Commit UI - Show when toggled */}
+                {showCommitSection && (
+                  <div className="border border-orange-500/30 rounded-lg p-4 space-y-3 bg-slate-900">
+                    <h4 className="font-semibold text-sm text-orange-400">Commit Funds to Hydra</h4>
+                    
+                    {/* Load UTxOs Button */}
+                    <Button
+                      onClick={async () => {
+                        if (!wallet) return
+                        try {
+                          setProcessing(true)
+                          const utxos = await wallet.getUtxos()
+                          setAvailableUtxos(utxos)
+                        } catch (error) {
+                          setError('Error loading UTxOs')
+                        } finally {
+                          setProcessing(false)
+                        }
+                      }}
+                      disabled={processing}
+                      variant="outline"
+                      className="w-full"
+                      size="sm"
+                    >
+                      {processing ? 'Loading...' : 'Load My UTxOs'}
+                    </Button>
+                    
+                    {/* UTxO List */}
+                    {availableUtxos.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-gray-400">
+                          Select a UTxO to commit:
+                        </p>
+                        <div className="max-h-48 overflow-y-auto space-y-2">
+                          {availableUtxos.map((utxo: any, index: number) => {
+                            const lovelace = utxo.output?.amount?.[0]?.quantity || 0
+                            const ada = lovelace / 1_000_000
+                            const txHash = utxo.input?.txHash || ''
+                            const outputIndex = utxo.input?.outputIndex ?? 0
+                            const isSelected = selectedUtxoIndex === index
+                            
+                            return (
+                              <button
+                                key={`${txHash}#${outputIndex}`}
+                                onClick={() => setSelectedUtxoIndex(index)}
+                                className={`w-full text-left p-3 rounded border transition-colors ${
+                                  isSelected 
+                                    ? 'border-orange-500 bg-orange-500/10' 
+                                    : 'border-slate-700 hover:border-slate-600'
+                                }`}
+                              >
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="font-mono text-xs text-gray-400 truncate">
+                                      {txHash.substring(0, 16)}...#{outputIndex}
+                                    </p>
+                                    <p className="text-lg font-bold text-orange-500">
+                                      {ada.toFixed(2)} ₳
+                                    </p>
+                                  </div>
+                                  {isSelected && (
+                                    <span className="text-orange-500">✓</span>
+                                  )}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        
+                        {/* Commit Button */}
+                        <Button
+                          onClick={commitFunds}
+                          disabled={processing}
+                          className="w-full bg-orange-500 hover:bg-orange-600"
+                        >
+                          {processing ? 'Committing...' : 'Commit Selected UTxO'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -868,10 +1033,10 @@ export default function MachinePayPage() {
             <div className="relative bg-slate-700 rounded-full h-16 mb-4 overflow-hidden slide-container">
               <div className="absolute inset-0 flex items-center justify-center text-white font-semibold">
                 {processing 
-                  ? `Processing ${paymentMethod === 'layer2' ? 'Hydra' : 'Layer 1'} Payment...` 
+                  ? "Processing Payment..." 
                   : transactionComplete 
                     ? "Payment Complete ✓" 
-                    : `Slide to Pay with ${paymentMethod === 'layer2' ? 'Hydra (L2)' : 'Layer 1'}`
+                    : "Slide to Pay"
                 }
               </div>
               <div 
