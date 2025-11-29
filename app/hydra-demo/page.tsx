@@ -65,6 +65,7 @@ export default function HydraDemo() {
   const [recipientAddress, setRecipientAddress] = useState<string>("")
   const [sendAmount, setSendAmount] = useState<string>("")
   const [sending, setSending] = useState<boolean>(false)
+  const [commitAmount, setCommitAmount] = useState<string>("1") // Default 1 ADA
   
   // Singleton pattern for HydraProvider and HydraInstance
   const hydraProviderRef = useRef<HydraProvider | null>(null)
@@ -1297,21 +1298,21 @@ export default function HydraDemo() {
                   <div>
                     <Button 
                       onClick={commitFunds}
-                      disabled={!!configError || !connected || loading || (headState !== 'initialized' && headState !== 'initializing')}
+                      disabled={!!configError || !connected || loading || (headState !== 'initialized' && headState !== 'initializing' && headState !== 'open')}
                       className="w-full justify-start gap-2 h-auto py-3"
-                      variant={(headState === 'initialized' || headState === 'initializing') && connected && !configError ? 'default' : 'outline'}
+                      variant={(headState === 'initialized' || headState === 'initializing' || headState === 'open') && connected && !configError ? 'default' : 'outline'}
                     >
                       <Upload className="h-5 w-5" />
                       <div className="flex-1 text-left">
                         <div className="font-semibold">Commit Funds</div>
-                        <div className="text-xs opacity-80">Lock UTxOs into the head</div>
+                        <div className="text-xs opacity-80">Commits first available UTxO</div>
                       </div>
-                      {loading && (headState === 'initialized' || headState === 'initializing') && <Spinner className="h-4 w-4" />}
+                      {loading && (headState === 'initialized' || headState === 'initializing' || headState === 'open') && <Spinner className="h-4 w-4" />}
                     </Button>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-xs">
-                  <p>Commit UTxOs from your wallet to the Hydra head. Available after initialization.</p>
+                  <p>Commit UTxOs from your wallet to the Hydra head. Will commit the first available UTxO. You can commit multiple times to add more funds. Available when head is initialized or open.</p>
                 </TooltipContent>
               </Tooltip>
 
