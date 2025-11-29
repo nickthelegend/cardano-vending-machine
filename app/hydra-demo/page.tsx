@@ -14,14 +14,13 @@ import { hydraLogger } from "@/lib/hydra-logger"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 // Configuration constants
-// Use local proxy for HTTP requests to avoid CORS issues
-const HYDRA_NODE_HTTP_URL = typeof window !== 'undefined' 
+// Use direct URL for read operations (like /head status)
+const HYDRA_NODE_URL = "http://209.38.126.165:4001"
+
+// Use proxy for write operations (commit, close, fanout) to avoid CORS
+const HYDRA_PROXY_URL = typeof window !== 'undefined' 
   ? `${window.location.origin}/api/hydra-proxy`
   : "http://localhost:3000/api/hydra-proxy"
-
-// For HydraProvider, we need to connect directly to the Hydra node
-// HydraProvider will automatically handle WebSocket connections internally
-const HYDRA_NODE_URL = "http://209.38.126.165:4001"
 
 const BLOCKFROST_API_KEY = process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY
 
@@ -249,12 +248,12 @@ export default function HydraDemo() {
         return hydraProviderRef.current
       }
 
-      hydraLogger.logConnection('connecting', { url: HYDRA_NODE_URL })
+      hydraLogger.logConnection('connecting', { url: HYDRA_PROXY_URL })
       
-      // Create new HydraProvider instance
-      // HydraProvider will automatically upgrade to WebSocket for real-time communication
+      // Create new HydraProvider instance using proxy to avoid CORS
+      // The proxy will handle HTTP operations (commit, close, fanout)
       const hydraProvider = new HydraProvider({ 
-        httpUrl: HYDRA_NODE_URL 
+        httpUrl: HYDRA_PROXY_URL 
       })
       
       // Store in ref for singleton pattern
@@ -267,18 +266,18 @@ export default function HydraDemo() {
         messageHandlerRegistered.current = true
       }
       
-      // Test connection to Hydra node
+      // Test connection to Hydra node via proxy
       try {
         await hydraProvider.connect()
-        hydraLogger.logConnection('connected', { url: HYDRA_NODE_URL })
-        updateStatus('Connected to Hydra node', 'success')
+        hydraLogger.logConnection('connected', { url: HYDRA_PROXY_URL })
+        updateStatus('Connected to Hydra node via proxy', 'success')
       } catch (connectionError: any) {
         hydraLogger.logConnection('error', { 
-          url: HYDRA_NODE_URL, 
+          url: HYDRA_PROXY_URL, 
           error: hydraLogger.formatErrorMessage(connectionError) 
         })
         const connErrorMsg = connectionError?.message || String(connectionError)
-        throw new Error(`Cannot reach Hydra node at ${HYDRA_NODE_URL}. Please check network connectivity. Details: ${connErrorMsg}`)
+        throw new Error(`Cannot reach Hydra node via proxy. Please check network connectivity. Details: ${connErrorMsg}`)
       }
       
       return hydraProvider
@@ -879,7 +878,8 @@ export default function HydraDemo() {
       hydraLogger.logOperationProgress('balance', 'Fetching Hydra head data')
       console.log('[Balance] Fetching from /head endpoint...')
       
-      const response = await fetch(`${HYDRA_NODE_HTTP_URL}/head`)
+      // Use direct URL for read operations (no CORS issues)
+      const response = await fetch(`${HYDRA_NODE_URL}/head`)
       if (!response.ok) {
         throw new Error(`Failed to fetch head data: ${response.status} ${response.statusText}`)
       }
@@ -955,7 +955,8 @@ export default function HydraDemo() {
   const fetchHeadStatus = useCallback(async () => {
     try {
       console.log('[HeadStatus] Fetching head status from /head endpoint...')
-      const response = await fetch(`${HYDRA_NODE_HTTP_URL}/head`)
+      // Use direct URL for read operations (no CORS issues)
+      const response = await fetch(`${HYDRA_NODE_URL}/head`)
       
       if (!response.ok) {
         console.log('[HeadStatus] Failed to fetch:', response.status, response.statusText)
@@ -981,10 +982,11 @@ export default function HydraDemo() {
           setHeadState('idle')
           updateStatus('Head is idle', 'info')
         }
-      } else if (tag === 'Initializing') {
-        if (headState !== 'initializing') {
-          setHeadState('initializing')
-          updateStatus('Head is initializing...', 'loading')
+      } else if (tag === 'Initial' || tag === 'Initializing') {
+        // 'Initial' means head is initialized and ready for commits
+        if (headState !== 'initialized') {
+          setHeadState('initialized')
+          updateStatus('Head is initialized - ready for commits', 'info')
         }
       } else if (tag === 'Closed') {
         if (headState !== 'closed') {

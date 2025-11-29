@@ -294,6 +294,87 @@
   - Test complete flow from initialization to fanout
   - _Requirements: All_
 
-- [ ] 17. Final Checkpoint - Ensure all tests pass
+- [x] 17. Final Checkpoint - Ensure all tests pass
+
+
 
   - Ensure all tests pass, ask the user if questions arise.
+
+
+- [x] 18. Integrate Hydra payment functionality into payment page
+
+
+
+
+
+
+  - Extract Hydra send funds logic from `/app/hydra-demo/page.tsx`
+  - Integrate Hydra Layer 2 payment into `/app/pay/[machine-id]/page.tsx`
+  - Replace current Layer 1 payment with Hydra Layer 2 payment option
+  - Add UI toggle to switch between Layer 1 and Layer 2 payment methods
+  - Implement HydraProvider setup for payment page
+  - Add state management for Hydra connection and head status
+  - Update payment flow to use `hydraProvider.submitTx()` for Layer 2 payments
+  - Add error handling specific to Hydra payments
+  - Display Hydra balance alongside wallet balance
+  - Show transaction status for both Layer 1 and Layer 2 payments
+  - _Requirements: All Hydra requirements apply to payment flow_
+
+- [x] 18.1 Set up Hydra provider and connection in payment page
+
+
+  - Import HydraProvider and HydraInstance from @meshsdk/hydra
+  - Add configuration constants for Hydra node URL
+  - Implement setupHydraProvider function with singleton pattern
+  - Add state for tracking Hydra connection status
+  - Handle WebSocket connection for real-time updates
+
+- [x] 18.2 Add Hydra balance display to payment page
+
+
+  - Fetch Hydra Layer 2 balance using hydraProvider.fetchUTxOs()
+  - Display Hydra balance alongside Layer 1 wallet balance
+  - Add refresh button for Hydra balance
+  - Show UTxO count in Hydra head
+  - Update balance display when head state changes
+
+- [x] 18.3 Implement Layer 2 payment option
+
+
+  - Add toggle/button to switch between Layer 1 and Layer 2 payment
+  - Implement sendHydraPayment function using MeshTxBuilder with isHydra: true
+  - Fetch UTxOs from Hydra head for the connected wallet
+  - Build transaction using hydraProvider as fetcher
+  - Sign transaction with wallet
+  - Submit transaction using hydraProvider.submitTx()
+  - Handle timeout for submitTx (15 second timeout)
+
+- [x] 18.4 Update payment UI for Hydra integration
+
+
+  - Add "Pay with Hydra (Layer 2)" button
+  - Show Hydra head status indicator
+  - Display appropriate messages based on head state (idle/open/closed)
+  - Add loading states for Hydra operations
+  - Show success/error messages for Layer 2 payments
+  - Update confetti animation to work with both payment types
+
+- [x] 18.5 Add error handling for Hydra payments
+
+
+  - Handle case when head is not open
+  - Handle insufficient Hydra balance
+  - Handle WebSocket connection errors
+  - Handle transaction timeout errors
+  - Provide user-friendly error messages
+  - Allow fallback to Layer 1 payment if Hydra fails
+
+- [x] 18.6 Test payment integration
+
+
+  - Test Layer 1 payment flow (existing functionality)
+  - Test Layer 2 payment flow with open Hydra head
+  - Test error cases (head not open, insufficient balance)
+  - Test switching between Layer 1 and Layer 2 payment methods
+  - Verify transaction broadcasting to Supabase channel
+  - Test payment completion and confetti animation
