@@ -65,7 +65,9 @@ export default function HydraDemo() {
   const [recipientAddress, setRecipientAddress] = useState<string>("")
   const [sendAmount, setSendAmount] = useState<string>("")
   const [sending, setSending] = useState<boolean>(false)
-  const [commitAmount, setCommitAmount] = useState<string>("1") // Default 1 ADA
+  const [commitAmount, setCommitAmount] = useState<string>("") // Amount user wants to commit
+  const [availableUtxos, setAvailableUtxos] = useState<any[]>([]) // Available UTxOs for commit
+  const [selectedUtxoIndex, setSelectedUtxoIndex] = useState<number>(0) // Which UTxO to commit
   
   // Singleton pattern for HydraProvider and HydraInstance
   const hydraProviderRef = useRef<HydraProvider | null>(null)
@@ -1292,6 +1294,102 @@ export default function HydraDemo() {
                 </TooltipContent>
               </Tooltip>
 
+              {/* Commit Section with UTxO Selection */}
+              {(headState === 'initialized' || headState === 'initializing' || headState === 'open') && connected && (
+                <div className="border border-orange-500/30 rounded-lg p-4 space-y-3">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Upload className="h-4 w-4" />
+                    Select UTxO to Commit
+                  </h4>
+                  
+                  {/* Fetch UTxOs Button */}
+                  <Button
+                    onClick={async () => {
+                      if (!wallet) return
+                      try {
+                        setLoading(true)
+                        const utxos = await wallet.getUtxos()
+                        setAvailableUtxos(utxos)
+                        updateStatus(`Found ${utxos.length} UTxOs in wallet`, 'info')
+                      } catch (error) {
+                        updateStatus('Error fetching UTxOs', 'error')
+                      } finally {
+                        setLoading(false)
+                      }
+                    }}
+                    disabled={loading}
+                    variant="outline"
+                    className="w-full"
+                    size="sm"
+                  >
+                    {loading ? 'Loading...' : 'Load My UTxOs'}
+                  </Button>
+                  
+                  {/* UTxO List */}
+                  {availableUtxos.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Select a UTxO to commit (entire UTxO will be committed):
+                      </p>
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {availableUtxos.map((utxo: any, index: number) => {
+                          const lovelace = utxo.output?.amount?.[0]?.quantity || 0
+                          const ada = lovelace / 1_000_000
+                          const txHash = utxo.input?.txHash || ''
+                          const outputIndex = utxo.input?.outputIndex ?? 0
+                          const isSelected = selectedUtxoIndex === index
+                          
+                          return (
+                            <button
+                              key={`${txHash}#${outputIndex}`}
+                              onClick={() => setSelectedUtxoIndex(index)}
+                              className={`w-full text-left p-3 rounded border transition-colors ${
+                                isSelected 
+                                  ? 'border-orange-500 bg-orange-500/10' 
+                                  : 'border-slate-700 hover:border-slate-600'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-mono text-xs truncate text-muted-foreground">
+                                    {txHash.substring(0, 16)}...#{outputIndex}
+                                  </p>
+                                  <p className="text-lg font-bold text-orange-500">
+                                    {ada.toFixed(2)} ₳
+                                  </p>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 className="h-5 w-5 text-orange-500 flex-shrink-0" />
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      
+                      {/* Or enter amount to find suitable UTxO */}
+                      <div className="pt-2 border-t border-slate-700">
+                        <label className="text-xs text-muted-foreground block mb-1">
+                          Or enter minimum amount (ADA):
+                        </label>
+                        <input
+                          type="number"
+                          value={commitAmount}
+                          onChange={(e) => setCommitAmount(e.target.value)}
+                          placeholder="e.g., 10"
+                          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-sm"
+                          step="0.01"
+                          min="0"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Will find and commit a UTxO with at least this amount
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               {/* Commit Button */}
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1304,15 +1402,19 @@ export default function HydraDemo() {
                     >
                       <Upload className="h-5 w-5" />
                       <div className="flex-1 text-left">
-                        <div className="font-semibold">Commit Funds</div>
-                        <div className="text-xs opacity-80">Commits first available UTxO</div>
+                        <div className="font-semibold">Commit Selected UTxO</div>
+                        <div className="text-xs opacity-80">
+                          {availableUtxos.length > 0 
+                            ? `Commit UTxO #${selectedUtxoIndex + 1} to Layer 2`
+                            : 'Load UTxOs first to select'}
+                        </div>
                       </div>
                       {loading && (headState === 'initialized' || headState === 'initializing' || headState === 'open') && <Spinner className="h-4 w-4" />}
                     </Button>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-xs">
-                  <p>Commit UTxOs from your wallet to the Hydra head. Will commit the first available UTxO. You can commit multiple times to add more funds. Available when head is initialized or open.</p>
+                  <p>Commit the selected UTxO from your wallet to the Hydra head. The entire UTxO will be made available on Layer 2. You can commit multiple times to add more funds.</p>
                 </TooltipContent>
               </Tooltip>
 
