@@ -554,12 +554,37 @@ export default function HydraDemo() {
     hydraLogger.logOperationStart('close', { walletConnected: true })
     
     try {
-      // Get HydraProvider instance
-      const hydraProvider = await setupHydraProvider()
+      // Send close request via WebSocket to Hydra node (Requirement 5.1)
+      hydraLogger.logOperationProgress('close', 'Connecting to Hydra node via WebSocket')
       
-      // Send close request to Hydra node (Requirement 5.1)
-      hydraLogger.logOperationProgress('close', 'Sending close request to Hydra node')
-      await hydraProvider.close()
+      const ws = new WebSocket('ws://209.38.126.165:4001')
+      
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          ws.close()
+          reject(new Error('WebSocket connection timeout'))
+        }, 10000)
+        
+        ws.onopen = () => {
+          clearTimeout(timeout)
+          hydraLogger.logOperationProgress('close', 'WebSocket connected, sending close message')
+          
+          // Send close message
+          ws.send(JSON.stringify({ tag: 'Close' }))
+          
+          // Wait a bit for the message to be sent
+          setTimeout(() => {
+            ws.close()
+            resolve()
+          }, 1000)
+        }
+        
+        ws.onerror = (error) => {
+          clearTimeout(timeout)
+          ws.close()
+          reject(new Error('WebSocket connection failed'))
+        }
+      })
       
       hydraLogger.logOperationProgress('close', 'Close request sent successfully')
       
@@ -590,7 +615,7 @@ export default function HydraDemo() {
       // Reset loading state to allow retry (Requirement 9.4)
       setLoading(false)
     }
-  }, [wallet, setupHydraProvider, updateStatus])
+  }, [wallet, updateStatus])
 
   /**
    * Fanout the closed Hydra head
@@ -617,12 +642,37 @@ export default function HydraDemo() {
     hydraLogger.logOperationStart('fanout', { walletConnected: true })
     
     try {
-      // Get HydraProvider instance
-      const hydraProvider = await setupHydraProvider()
+      // Send fanout request via WebSocket to Hydra node (Requirement 6.1)
+      hydraLogger.logOperationProgress('fanout', 'Connecting to Hydra node via WebSocket')
       
-      // Send fanout request to Hydra node (Requirement 6.1)
-      hydraLogger.logOperationProgress('fanout', 'Sending fanout request to Hydra node')
-      await hydraProvider.fanout()
+      const ws = new WebSocket('ws://209.38.126.165:4001')
+      
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          ws.close()
+          reject(new Error('WebSocket connection timeout'))
+        }, 10000)
+        
+        ws.onopen = () => {
+          clearTimeout(timeout)
+          hydraLogger.logOperationProgress('fanout', 'WebSocket connected, sending fanout message')
+          
+          // Send fanout message
+          ws.send(JSON.stringify({ tag: 'Fanout' }))
+          
+          // Wait a bit for the message to be sent
+          setTimeout(() => {
+            ws.close()
+            resolve()
+          }, 1000)
+        }
+        
+        ws.onerror = (error) => {
+          clearTimeout(timeout)
+          ws.close()
+          reject(new Error('WebSocket connection failed'))
+        }
+      })
       
       hydraLogger.logOperationProgress('fanout', 'Fanout request sent successfully')
       
@@ -653,7 +703,7 @@ export default function HydraDemo() {
       // Reset loading state to allow retry (Requirement 9.4)
       setLoading(false)
     }
-  }, [wallet, setupHydraProvider, updateStatus])
+  }, [wallet, updateStatus])
 
   /**
    * Send funds within the Hydra head (Layer 2 transaction)
