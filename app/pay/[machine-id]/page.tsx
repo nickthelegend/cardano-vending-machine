@@ -833,7 +833,39 @@ export default function MachinePayPage() {
       </div>
 
       <div className="container max-w-2xl mx-auto">
-
+        {/* Commit Bob Funds Button */}
+        <div className="mb-4 flex justify-center">
+          <Button
+            onClick={async () => {
+              try {
+                setProcessing(true)
+                setError(null)
+                
+                const response = await fetch('http://209.38.126.165:8001/commit-bob', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                })
+                
+                if (!response.ok) {
+                  throw new Error(`Failed to commit Bob funds: ${response.status}`)
+                }
+                
+                const data = await response.json()
+                setError(`Success: Bob funds committed! ${JSON.stringify(data)}`)
+              } catch (err: any) {
+                setError(`Error: ${err.message}`)
+              } finally {
+                setProcessing(false)
+              }
+            }}
+            disabled={processing}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3"
+          >
+            {processing ? 'Committing Bob Funds...' : '🤖 Commit Bob Funds'}
+          </Button>
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}

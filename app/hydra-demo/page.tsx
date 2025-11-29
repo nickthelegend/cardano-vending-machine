@@ -1146,6 +1146,40 @@ export default function HydraDemo() {
             <CardDescription>
               Manage the complete lifecycle of a Hydra head on Cardano Layer 2
             </CardDescription>
+            
+            {/* Commit Bob Funds Button */}
+            <div className="pt-4">
+              <Button
+                onClick={async () => {
+                  try {
+                    setLoading(true)
+                    updateStatus('Committing Bob funds...', 'loading')
+                    
+                    const response = await fetch('http://209.38.126.165:8001/commit-bob', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                    })
+                    
+                    if (!response.ok) {
+                      throw new Error(`Failed to commit Bob funds: ${response.status}`)
+                    }
+                    
+                    const data = await response.json()
+                    updateStatus(`Success: Bob funds committed! ${JSON.stringify(data)}`, 'success')
+                  } catch (error: any) {
+                    updateStatus(`Error: ${error.message}`, 'error')
+                  } finally {
+                    setLoading(false)
+                  }
+                }}
+                disabled={loading}
+                className="w-full bg-purple-600 hover:bg-purple-700"
+              >
+                {loading ? 'Committing Bob Funds...' : '🤖 Commit Bob Funds'}
+              </Button>
+            </div>
           </CardHeader>
           
           <CardContent className="space-y-6">
