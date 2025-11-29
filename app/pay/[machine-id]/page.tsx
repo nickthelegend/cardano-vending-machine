@@ -381,6 +381,29 @@ export default function MachinePayPage() {
       console.log(`[Commit] Success! Tx hash: ${txHashResult}`)
       setError(null)
       
+      // Automatically call commit-bob after successful commit
+      console.log('[Commit] Automatically calling commit-bob...')
+      try {
+        const bobResponse = await fetch('http://209.38.126.165:8001/commit-bob', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+        
+        if (bobResponse.ok) {
+          const bobData = await bobResponse.json()
+          console.log('[Commit] Bob commit successful:', bobData)
+          setError(`✓ Commit successful! Bob also committed. Tx: ${txHashResult}`)
+        } else {
+          console.warn('[Commit] Bob commit failed:', bobResponse.status)
+          setError(`✓ Your commit successful (${txHashResult}), but Bob commit failed`)
+        }
+      } catch (bobError: any) {
+        console.error('[Commit] Error calling commit-bob:', bobError)
+        setError(`✓ Your commit successful (${txHashResult}), but Bob commit error: ${bobError.message}`)
+      }
+      
       // Clear UTxOs and close commit section
       setAvailableUtxos([])
       setShowCommitSection(false)
