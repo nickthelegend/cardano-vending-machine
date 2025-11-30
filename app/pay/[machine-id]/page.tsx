@@ -633,6 +633,27 @@ export default function MachinePayPage() {
         payload: { txnId: txHash, machineId, paymentMethod: 'layer2' }
       })
       
+      // Send DISPENSE token to user after successful payment
+      console.log('[HydraPayment] Sending DISPENSE token to user...')
+      try {
+        const sendTokenResponse = await fetch(`http://209.38.126.165:8001/send/${walletAddress}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+        
+        if (sendTokenResponse.ok) {
+          const tokenData = await sendTokenResponse.json()
+          console.log('[HydraPayment] Token sent successfully:', tokenData)
+        } else {
+          console.warn('[HydraPayment] Failed to send token:', sendTokenResponse.status)
+        }
+      } catch (tokenError: any) {
+        console.error('[HydraPayment] Error sending token:', tokenError)
+        // Don't fail the payment if token sending fails
+      }
+      
       setShowConfetti(true)
       setTransactionComplete(true)
       setProcessing(false)
