@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const HYDRA_NODE_URL = 'http://209.38.126.165:4001'
+const HYDRA_NODE_URL = process.env.HYDRA_NODE_URL || 'http://209.38.126.165:4001'
 
 // Handle all HTTP methods and proxy to Hydra node
 async function handleRequest(request: NextRequest) {

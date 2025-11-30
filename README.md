@@ -148,11 +148,36 @@ We leverage **Cardano's Hydra Head protocol** to enable:
    
    Add your configuration:
    ```env
+   # External Service URLs (for API proxy routes)
+   HYDRA_NODE_URL=http://209.38.126.165:4001
+   HYDRA_NODE_WS_URL=ws://209.38.126.165:4001
+   BOB_SERVICE_URL=http://209.38.126.165:8001
+   
+   # Blockchain API
    NEXT_PUBLIC_BLOCKFROST_API_KEY=your_blockfrost_api_key
+   
+   # Database (Supabase)
    DATABASE_URL=your_supabase_database_url
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
+   
+   **Environment Variable Reference:**
+   
+   | Variable | Description | Required | Default |
+   |----------|-------------|----------|---------|
+   | `HYDRA_NODE_URL` | Hydra head service endpoint (HTTP) | No | `http://209.38.126.165:4001` |
+   | `HYDRA_NODE_WS_URL` | Hydra head service endpoint (WebSocket) | No | `ws://209.38.126.165:4001` |
+   | `BOB_SERVICE_URL` | Bob automated service endpoint | No | `http://209.38.126.165:8001` |
+   | `NEXT_PUBLIC_BLOCKFROST_API_KEY` | Blockfrost API key for Cardano | Yes | - |
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Yes | - |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key | Yes | - |
+   | `DATABASE_URL` | Database connection string | Yes | - |
+   
+   **Notes:**
+   - `HYDRA_NODE_URL`, `HYDRA_NODE_WS_URL`, and `BOB_SERVICE_URL` have fallback defaults for development
+   - All `NEXT_PUBLIC_*` variables are exposed to the browser
+   - Server-side only variables (`HYDRA_NODE_URL`, `HYDRA_NODE_WS_URL`, `BOB_SERVICE_URL`) are used by API routes
 
 4. **Set up the database**
    ```bash
@@ -238,6 +263,53 @@ await hydraProvider.close()
 // 6. Fanout
 await hydraProvider.fanout()
 ```
+
+### API Proxy Configuration
+
+The application uses Next.js API routes to proxy requests to external HTTP services, solving mixed content issues when deployed on HTTPS (Vercel). This architecture enables:
+
+- **HTTPS to HTTP bridging** - Browser makes HTTPS calls to API routes, which make HTTP calls server-side
+- **Fire-and-forget operations** - Long-running operations return immediately to avoid Vercel timeout limits
+- **Centralized error handling** - Consistent error responses across all external service calls
+
+**API Routes:**
+
+| Route | Purpose | External Service | Pattern |
+|-------|---------|------------------|---------|
+| `/api/hydra-status` | Get head status and balances | Hydra Node | Synchronous |
+| `/api/bob-commit` | Trigger Bob's commit | Bob Service | Fire-and-forget |
+| `/api/dispense-token` | Dispense tokens | Bob Service | Fire-and-forget |
+
+**Configuration:**
+
+The API routes use environment variables with fallback defaults:
+
+```typescript
+// In API routes
+const HYDRA_NODE_URL = process.env.HYDRA_NODE_URL || 'http://209.38.126.165:4001'
+const BOB_SERVICE_URL = process.env.BOB_SERVICE_URL || 'http://209.38.126.165:8001'
+```
+
+**Development vs Production:**
+
+- **Development**: Uses default URLs pointing to shared test services
+- **Production**: Override with environment variables in Vercel dashboard or `.env.local`
+
+**Fire-and-Forget Pattern:**
+
+For operations that may take longer than Vercel's timeout limits (10s on Hobby plan), we use a fire-and-forget pattern:
+
+```typescript
+// Initiate request without waiting
+fetch(externalServiceUrl, { method: 'POST' })
+  .then(response => console.log('Success'))
+  .catch(error => console.error('Error'))
+
+// Return immediately
+return NextResponse.json({ success: true, message: 'Operation initiated' })
+```
+
+This ensures the user receives immediate feedback while the operation completes in the background.
 
 ### CORS Proxy Solution
 

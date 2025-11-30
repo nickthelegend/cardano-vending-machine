@@ -14,13 +14,16 @@ import { hydraLogger } from "@/lib/hydra-logger"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 // Configuration constants
-// Use direct URL for read operations (like /head status)
-const HYDRA_NODE_URL = "http://209.38.126.165:4001"
-
 // Use proxy for write operations (commit, close, fanout) to avoid CORS
 const HYDRA_PROXY_URL = typeof window !== 'undefined' 
   ? `${window.location.origin}/api/hydra-proxy`
   : "http://localhost:3000/api/hydra-proxy"
+
+// Hydra node URL for WebSocket connections and error messages (display only)
+const HYDRA_NODE_URL = "http://209.38.126.165:4001"
+
+// Note: Read operations (head status, balance) now use /api/hydra-status API route
+// to avoid mixed content issues on HTTPS deployments
 
 const BLOCKFROST_API_KEY = process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY
 
@@ -898,7 +901,7 @@ export default function HydraDemo() {
   }, [wallet, walletAddress, headState, recipientAddress, sendAmount, setupHydraProvider, updateStatus])
 
   /**
-   * Fetch Hydra balance (Layer 2 funds)
+   * Fetch Hydra balance (Layer 2 funds) via API route
    * Shows the balance of funds inside the Hydra head
    */
   const fetchHydraBalance = useCallback(async () => {
@@ -927,68 +930,43 @@ export default function HydraDemo() {
     console.log('[Balance] Starting balance fetch...')
 
     try {
-      // Fetch head data to get localUTxO
-      hydraLogger.logOperationProgress('balance', 'Fetching Hydra head data')
-      console.log('[Balance] Fetching from /head endpoint...')
+      // Fetch balance via API route
+      hydraLogger.logOperationProgress('balance', 'Fetching balance from API route')
+      console.log('[Balance] Fetching from API route...')
       
-      // Use direct URL for read operations (no CORS issues)
-      const response = await fetch(`${HYDRA_NODE_URL}/head`)
+      // Use API route to avoid mixed content issues
+      const response = await fetch(`/api/hydra-status?address=${encodeURIComponent(walletAddress)}`)
       if (!response.ok) {
-        throw new Error(`Failed to fetch head data: ${response.status} ${response.statusText}`)
+        throw new Error(`Failed to fetch balance: ${response.status} ${response.statusText}`)
       }
       
-      const headData = await response.json()
-      console.log('[Balance] Received head data:', headData)
+      const balanceData = await response.json()
+      console.log('[Balance] Received balance data:', balanceData)
       
-      // Get localUTxO from coordinatedHeadState
-      const localUTxO = headData?.contents?.coordinatedHeadState?.localUTxO || {}
-      console.log('[Balance] Local UTxO:', localUTxO)
+      // API returns balance in ADA and utxos array
+      const balanceAda = balanceData.balance || 0
+      const utxos = balanceData.utxos || []
       
-      // UTxOs are in an object format: { "txHash#index": { address, value, ... }, ... }
-      const utxoEntries = Object.entries(localUTxO)
-      console.log('[Balance] Total UTxO entries:', utxoEntries.length)
-      
-      // Filter and calculate balance for this wallet
-      let totalLovelace = 0
-      const myUtxos: any[] = []
-      
-      for (const [utxoRef, utxo] of utxoEntries) {
-        const utxoData = utxo as any
-        console.log('[Balance] Checking UTxO:', { 
-          ref: utxoRef, 
-          address: utxoData.address, 
-          myAddress: walletAddress,
-          matches: utxoData.address === walletAddress
-        })
-        
-        if (utxoData.address === walletAddress) {
-          const lovelace = utxoData.value?.lovelace || 0
-          console.log('[Balance] Found my UTxO:', { ref: utxoRef, lovelace })
-          totalLovelace += Number(lovelace)
-          myUtxos.push({
-            ref: utxoRef,
-            address: utxoData.address,
-            lovelace: Number(lovelace),
-            ada: Number(lovelace) / 1_000_000,
-            value: utxoData.value
-          })
-        }
-      }
-      
-      console.log('[Balance] My UTxO count:', myUtxos.length)
-      console.log('[Balance] Total lovelace:', totalLovelace)
-      console.log('[Balance] My UTxOs:', myUtxos)
-      
-      // Convert to ADA
-      const balanceAda = totalLovelace / 1_000_000
       console.log('[Balance] Balance in ADA:', balanceAda)
+      console.log('[Balance] UTxO count:', utxos.length)
+      console.log('[Balance] UTxOs:', utxos)
+      
+      // Transform UTxOs to match expected format
+      const myUtxos = utxos.map((utxo: any) => ({
+        ref: utxo.ref,
+        address: walletAddress,
+        lovelace: utxo.lovelace,
+        ada: utxo.lovelace / 1_000_000,
+        value: { lovelace: utxo.lovelace }
+      }))
+      
       setHydraBalance(balanceAda)
       setHydraUtxos(myUtxos)
       
       hydraLogger.logOperationComplete('balance', { 
         utxoCount: myUtxos.length, 
         balanceAda,
-        totalLovelace 
+        totalLovelace: balanceAda * 1_000_000
       })
       
     } catch (error: any) {
@@ -1002,14 +980,14 @@ export default function HydraDemo() {
   }, [wallet, walletAddress, headState])
 
   /**
-   * Fetch current head status from Hydra node
+   * Fetch current head status from Hydra node via API route
    * Syncs the UI state with the actual Hydra node state
    */
   const fetchHeadStatus = useCallback(async () => {
     try {
-      console.log('[HeadStatus] Fetching head status from /head endpoint...')
-      // Use direct URL for read operations (no CORS issues)
-      const response = await fetch(`${HYDRA_NODE_URL}/head`)
+      console.log('[HeadStatus] Fetching head status from API route...')
+      // Use API route to avoid mixed content issues
+      const response = await fetch('/api/hydra-status')
       
       if (!response.ok) {
         console.log('[HeadStatus] Failed to fetch:', response.status, response.statusText)
@@ -1153,9 +1131,9 @@ export default function HydraDemo() {
                 onClick={async () => {
                   try {
                     setLoading(true)
-                    updateStatus('Committing Bob funds...', 'loading')
+                    updateStatus('Initiating Bob commit via API route...', 'loading')
                     
-                    const response = await fetch('http://209.38.126.165:8001/commit-bob', {
+                    const response = await fetch('/api/bob-commit', {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
@@ -1218,7 +1196,7 @@ export default function HydraDemo() {
                     4. Use "Close Head" and "Fanout" when done
                   </p>
                   <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Connected to Hydra node at <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">209.38.126.165:4001</code> via proxy
+                    Connected to Hydra node via API routes (read operations) and proxy (write operations)
                   </p>
                 </div>
               </div>

@@ -16,13 +16,13 @@ import { supabase } from '@/lib/supabase'
 import React from "react"
 
 // Configuration constants for Hydra
-// Use direct URL for read operations (like /head status)
-const HYDRA_NODE_URL = "http://209.38.126.165:4001"
-
 // Use proxy for write operations (commit, close, fanout) to avoid CORS
 const HYDRA_PROXY_URL = typeof window !== 'undefined' 
   ? `${window.location.origin}/api/hydra-proxy`
   : "http://localhost:3000/api/hydra-proxy"
+
+// Note: Read operations (head status, balance) now use /api/hydra-status API route
+// to avoid mixed content issues on HTTPS deployments
 
 const BLOCKFROST_API_KEY = process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || 'preprodFzYIfO6BdUE1PvHWIiekgYE1ixMa9XF9'
 
@@ -190,15 +190,15 @@ export default function MachinePayPage() {
   }, [setupHydraProvider])
 
   /**
-   * Fetch current head status from Hydra node
+   * Fetch current head status from Hydra node via API route
    * Syncs the UI state with the actual Hydra node state
-   * Uses direct URL for read-only operations (no CORS issues)
+   * Uses API route to avoid mixed content issues
    */
   const fetchHeadStatus = useCallback(async () => {
     try {
-      console.log('Fetching head status from /head endpoint...')
-      // Use direct URL for read operations
-      const response = await fetch(`${HYDRA_NODE_URL}/head`)
+      console.log('Fetching head status from API route...')
+      // Use API route instead of direct Hydra node call
+      const response = await fetch('/api/hydra-status')
       
       if (!response.ok) {
         console.log('Failed to fetch head status:', response.status, response.statusText)
@@ -247,9 +247,9 @@ export default function MachinePayPage() {
   }, [connected, wallet, setupHydraProvider, fetchHeadStatus])
 
   /**
-   * Fetch Hydra balance (Layer 2 funds)
+   * Fetch Hydra balance (Layer 2 funds) via API route
    * Shows the balance of funds inside the Hydra head
-   * Uses direct URL for read-only operations
+   * Uses API route to avoid mixed content issues
    */
   const fetchHydraBalance = useCallback(async () => {
     if (!wallet || headState !== 'open') {
@@ -264,46 +264,24 @@ export default function MachinePayPage() {
     try {
       const walletAddress = await wallet.getChangeAddress()
       
-      // Fetch head data to get localUTxO - use direct URL for read operations
-      const response = await fetch(`${HYDRA_NODE_URL}/head`)
+      // Fetch balance via API route with address parameter
+      const response = await fetch(`/api/hydra-status?address=${encodeURIComponent(walletAddress)}`)
       if (!response.ok) {
-        throw new Error(`Failed to fetch head data: ${response.status} ${response.statusText}`)
+        throw new Error(`Failed to fetch balance: ${response.status} ${response.statusText}`)
       }
       
-      const headData = await response.json()
-      console.log('Head data for balance:', headData)
+      const balanceData = await response.json()
+      console.log('Balance data from API:', balanceData)
       
-      // Get localUTxO from coordinatedHeadState
-      const localUTxO = headData?.contents?.coordinatedHeadState?.localUTxO || {}
-      console.log('Local UTxO:', localUTxO)
+      // API returns balance in ADA and utxo count
+      const balanceAda = balanceData.balance || 0
+      const utxoCount = balanceData.utxoCount || 0
       
-      // UTxOs are in an object format: { "txHash#index": { address, value, ... }, ... }
-      const utxoEntries = Object.entries(localUTxO)
-      console.log('Total UTxO entries:', utxoEntries.length)
-      
-      // Filter and calculate balance for this wallet
-      let totalLovelace = 0
-      let myUtxoCount = 0
-      
-      for (const [utxoRef, utxo] of utxoEntries) {
-        const utxoData = utxo as any
-        
-        if (utxoData.address === walletAddress) {
-          const lovelace = utxoData.value?.lovelace || 0
-          console.log('Found my UTxO:', { ref: utxoRef, lovelace })
-          totalLovelace += Number(lovelace)
-          myUtxoCount++
-        }
-      }
-      
-      console.log('My UTxO count:', myUtxoCount)
-      console.log('Total lovelace:', totalLovelace)
-      
-      // Convert to ADA
-      const balanceAda = totalLovelace / 1_000_000
       console.log('Balance in ADA:', balanceAda)
+      console.log('UTxO count:', utxoCount)
+      
       setHydraBalance(balanceAda)
-      setHydraUtxoCount(myUtxoCount)
+      setHydraUtxoCount(utxoCount)
       
     } catch (error: any) {
       console.error('Error fetching Hydra balance:', error)
@@ -381,10 +359,10 @@ export default function MachinePayPage() {
       console.log(`[Commit] Success! Tx hash: ${txHashResult}`)
       setError(null)
       
-      // Automatically call commit-bob after successful commit
-      console.log('[Commit] Automatically calling commit-bob...')
+      // Automatically call commit-bob after successful commit via API route
+      console.log('[Commit] Triggering Bob commit via API route...')
       try {
-        const bobResponse = await fetch('http://209.38.126.165:8001/commit-bob', {
+        const bobResponse = await fetch('/api/bob-commit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -393,14 +371,14 @@ export default function MachinePayPage() {
         
         if (bobResponse.ok) {
           const bobData = await bobResponse.json()
-          console.log('[Commit] Bob commit successful:', bobData)
-          setError(`✓ Commit successful! Bob also committed. Tx: ${txHashResult}`)
+          console.log('[Commit] Bob commit initiated:', bobData)
+          setError(`✓ Commit successful! Bob commit initiated. Tx: ${txHashResult}`)
         } else {
-          console.warn('[Commit] Bob commit failed:', bobResponse.status)
-          setError(`✓ Your commit successful (${txHashResult}), but Bob commit failed`)
+          console.warn('[Commit] Bob commit API failed:', bobResponse.status)
+          setError(`✓ Your commit successful (${txHashResult}), but Bob commit initiation failed`)
         }
       } catch (bobError: any) {
-        console.error('[Commit] Error calling commit-bob:', bobError)
+        console.error('[Commit] Error calling Bob commit API:', bobError)
         setError(`✓ Your commit successful (${txHashResult}), but Bob commit error: ${bobError.message}`)
       }
       
@@ -633,24 +611,25 @@ export default function MachinePayPage() {
         payload: { txnId: txHash, machineId, paymentMethod: 'layer2' }
       })
       
-      // Send DISPENSE token to user after successful payment
-      console.log('[HydraPayment] Sending DISPENSE token to user...')
+      // Send DISPENSE token to user after successful payment via API route
+      console.log('[HydraPayment] Initiating token dispense via API route...')
       try {
-        const sendTokenResponse = await fetch(`http://209.38.126.165:8001/send/${walletAddress}`, {
+        const sendTokenResponse = await fetch('/api/dispense-token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ walletAddress }),
         })
         
         if (sendTokenResponse.ok) {
           const tokenData = await sendTokenResponse.json()
-          console.log('[HydraPayment] Token sent successfully:', tokenData)
+          console.log('[HydraPayment] Token dispense initiated:', tokenData)
         } else {
-          console.warn('[HydraPayment] Failed to send token:', sendTokenResponse.status)
+          console.warn('[HydraPayment] Failed to initiate token dispense:', sendTokenResponse.status)
         }
       } catch (tokenError: any) {
-        console.error('[HydraPayment] Error sending token:', tokenError)
+        console.error('[HydraPayment] Error initiating token dispense:', tokenError)
         // Don't fail the payment if token sending fails
       }
       
